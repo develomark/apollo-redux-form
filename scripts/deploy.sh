@@ -32,5 +32,5 @@ cp README.md npm/
 cp LICENSE npm/
 
 # publish to npm
-cd npm && npm publish --access public
+# cd npm && npm publish --access public
 

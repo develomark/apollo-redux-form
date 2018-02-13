@@ -174,10 +174,12 @@ class VisitingContext {
   private customFields: FormRenderers;
   constructor(types: TypeDefinitions, renderers: FormRenderers = {}, customFields = {}) {
     this.types = types;
+    console.log('typz',types)
     this.renderers = renderers;
     this.customFields = customFields;
   }
   resolveType(typeName: string): any | undefined {
+    
     return this.types[typeName];
   }
   resolveRenderer(typeName: string): FormRenderer {
@@ -219,7 +221,7 @@ function visitWithContext(context: VisitingContext, path: string[] = []) {
       const fullPath = path.concat(fieldName);
       const fullPathStr = fullPath.join('.');
       
-      const type = context.resolveType(typeName) && context.resolveType(typeName) || context.resolveType(fieldName);
+      const type = context.resolveType(fieldName) && context.resolveType(typeName) || context.resolveType(typeName) ;
       const rendererByType = context.resolveRenderer(typeName);
       const rendererByField = context.resolveFieldRenderer(fullPathStr);
 
@@ -227,7 +229,9 @@ function visitWithContext(context: VisitingContext, path: string[] = []) {
       const renderer = rendererByField.render !== undefined ? rendererByField : rendererByType;
 
       if ( isScalar(typeName) ) {
-        const definition = context.resolveType(fieldName) && context.resolveType(fieldName) || type;
+        const definition = context.resolveType(fieldName) && {...context.resolveType(fieldName), memberPath: fullPath}
+        || {...type, memberPath: fullPath};
+        
         return builder.createInputField(renderer, fieldName, typeName, required, definition);
       } else {
         if (type) {
@@ -237,16 +241,16 @@ function visitWithContext(context: VisitingContext, path: string[] = []) {
               const nestedContext = context.extend(renderer.renderers, renderer.customFields);
               const children = visit(type.fields, visitWithContext(nestedContext, fullPath));
               const objectRenderer = renderer.render !== undefined ? renderer : context.resolveRenderer('Object');
-              const definition = context.resolveType(fieldName) && context.resolveType(fieldName) || type;
-              // console.log('Section Name - ' + fieldName)
-              // console.log(node)
+              const definition = context.resolveType(fieldName) && {...context.resolveType(fieldName), memberPath: fullPath}
+                || {...type, memberPath: fullPath};
               return builder.createFormSection(objectRenderer, fieldName, children, required, definition);
             case 'EnumTypeDefinition':
               const options = type.values.map(
                 ({name: {value}}: EnumValueDefinitionNode) => ({key: value, value}),
               );
               const enumRenderer = renderer.render !== undefined ? renderer : context.resolveRenderer('Enum');
-              const definition1 = context.resolveType(fieldName) && context.resolveType(fieldName) || type;
+              const definition1 = context.resolveType(fieldName) && {...context.resolveType(fieldName), memberPath: fullPath}
+                || {...type, memberPath: fullPath};
               return builder.createSelectField(enumRenderer, fieldName, typeName, options, required, definition1);
             case 'ScalarTypeDefinition':
             case 'InputValueDefinition':
@@ -286,8 +290,6 @@ function visitWithContext(context: VisitingContext, path: string[] = []) {
       },
     },
     ListType(node: any) {
-      console.log(fieldName)
-      console.log(node)
       let typeName = '';
       if (node.type.kind === 'NonNullType') {
         required = true;
@@ -297,21 +299,22 @@ function visitWithContext(context: VisitingContext, path: string[] = []) {
       }
       const fullPath = path.concat(fieldName);
       const fullPathStr = fullPath.join('.');
-      const type = context.resolveType(typeName) && context.resolveType(typeName) || context.resolveType(fieldName);
+      const type = context.resolveType(fieldName) && context.resolveType(typeName) || context.resolveType(typeName);
       const rendererByType = context.resolveRenderer(typeName);
       const rendererByField = context.resolveFieldRenderer(fullPathStr);
 
       // if a render for this path exists, take the highest priority
-      const renderer = rendererByField.render !== undefined ? rendererByField : rendererByType;
-      const customFieldRenderer = context.resolveFieldRenderer(fullPathStr);
-      // console.log(type)
-      //console.log(type)
-      if (customFieldRenderer.render) {
-        return builder.createArrayField(customFieldRenderer, fieldName, undefined, node.type, required);
-      } else {
+      // const renderer = rendererByField.render !== undefined ? rendererByField : rendererByType;
+      const customFieldRenderer = rendererByField.render !== undefined ? rendererByField : rendererByType;
+      const definition = context.resolveType(fieldName) && {...context.resolveType(fieldName), memberPath: fullPath}
+        || {...type, memberPath: fullPath};
 
-        const children = visit(type.fields, visitWithContext(context, fullPath));
-        const definition = context.resolveType(fieldName) && context.resolveType(fieldName) || type;
+      let children = visit(type.fields, visitWithContext(context, fullPath));
+          if (customFieldRenderer.render) {
+            children =  builder.createFormSection(customFieldRenderer, fieldName, children, required, definition);
+            // builder.createInputField(customFieldRenderer, fieldName, typeName, required, type);
+        }
+        
         const arrayRenderer = context.resolveRenderer('Array');
         const arrayField = builder.createArrayField(arrayRenderer, fieldName, children, node.type.type, required, definition);
         return arrayField;
@@ -319,7 +322,6 @@ function visitWithContext(context: VisitingContext, path: string[] = []) {
         //   // tslint:disable-line
         //   `Listttttttt Type requires a custom field renderer. No renderer found for ${fullPathStr}`,
         // );
-      }
       // return BREAK;
     },
     InputValueDefinition: {
