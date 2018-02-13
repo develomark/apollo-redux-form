@@ -174,7 +174,6 @@ class VisitingContext {
   private customFields: FormRenderers;
   constructor(types: TypeDefinitions, renderers: FormRenderers = {}, customFields = {}) {
     this.types = types;
-    console.log('typz',types)
     this.renderers = renderers;
     this.customFields = customFields;
   }
@@ -241,8 +240,8 @@ function visitWithContext(context: VisitingContext, path: string[] = []) {
               const nestedContext = context.extend(renderer.renderers, renderer.customFields);
               const children = visit(type.fields, visitWithContext(nestedContext, fullPath));
               const objectRenderer = renderer.render !== undefined ? renderer : context.resolveRenderer('Object');
-              const definition = context.resolveType(fieldName) && {...context.resolveType(fieldName), memberPath: fullPath}
-                || {...type, memberPath: fullPath};
+              const definition = context.resolveType(fieldName) && {...context.resolveType(fieldName), memberPath: fullPath, object: true}
+                || {...type, memberPath: fullPath, object: true};
               return builder.createFormSection(objectRenderer, fieldName, children, required, definition);
             case 'EnumTypeDefinition':
               const options = type.values.map(
