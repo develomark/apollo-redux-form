@@ -178,7 +178,7 @@ class VisitingContext {
     this.customFields = customFields;
   }
   resolveType(typeName: string): any | undefined {
-    
+    // console.log('types',this.types)
     return this.types[typeName];
   }
   resolveRenderer(typeName: string): FormRenderer {
@@ -190,9 +190,9 @@ class VisitingContext {
     return isRenderFunction(render) ? {render} as FormRenderer : render;
   }
   extend(renderers: FormRenderers = {}, customFields: FormRenderers = {}, types: TypeDefinitions = {}) {
-
+    console.log({ ...this.renderers, ...renderers })
     return new VisitingContext(
-      !Object.keys(types).length ? this.types  : {...this.types, ...types},
+      !Object.keys(types).length ? this.types  : {...types, ...this.types},
       { ...this.renderers, ...renderers },
       { ...this.customFields, ...customFields },
     );
@@ -221,12 +221,14 @@ function visitWithContext(context: VisitingContext, path: string[] = []) {
       const fullPath = path.concat(fieldName);
       const fullPathStr = fullPath.join('.');
       
-      const type = context.resolveType(fieldName) && context.resolveType(typeName) || context.resolveType(typeName) ;
+      const type = context.resolveType(fieldName) && context.resolveType(fieldName) || context.resolveType(typeName) ;
       const rendererByType = context.resolveRenderer(typeName);
       const rendererByField = context.resolveFieldRenderer(fullPathStr);
 
       // if a render for this path exists, take the highest priority
       const renderer = rendererByField.render !== undefined ? rendererByField : rendererByType;
+
+      console.log(fieldName, typeName,type, context.resolveRenderer(typeName))
 
       if ( isScalar(typeName) ) {
         const definition = context.resolveType(fieldName) && {...context.resolveType(fieldName), memberPath: fullPath}
@@ -237,13 +239,11 @@ function visitWithContext(context: VisitingContext, path: string[] = []) {
         if (type) {
           switch ( type.kind ) {
             case 'InputObjectTypeDefinition':
-              const types: TypeDefinitions = {};
-              type.fields.forEach((fieldType: InputValueDefinitionNode): void => {types[fieldType.name.value] = fieldType; });
-              const nestedContext = context.extend(renderer.renderers, renderer.customFields, types);
+            
+              const nestedContext = context.extend(renderer.renderers, renderer.customFields);
               const children = visit(type.fields, visitWithContext(nestedContext, fullPath));
               const objectRenderer = renderer.render !== undefined ? renderer : context.resolveRenderer('Object');
-              const definition = nestedContext.resolveType(fieldName)
-                && {...nestedContext.resolveType(fieldName), memberPath: fullPath, object: true}
+              const definition = context.resolveType(fieldName) && {...context.resolveType(fieldName), memberPath: fullPath, object: true}
                 || {...type, memberPath: fullPath, object: true};
               return builder.createFormSection(objectRenderer, fieldName, children, required, definition);
             case 'EnumTypeDefinition':
@@ -257,9 +257,8 @@ function visitWithContext(context: VisitingContext, path: string[] = []) {
             case 'ScalarTypeDefinition':
             case 'InputValueDefinition':
               if (renderer.render !== undefined) {
-                const definition2 = context.resolveType(fieldName) && {...context.resolveType(fieldName), memberPath: fullPath}
-                || {...type, memberPath: fullPath};
-                return builder.createInputField(renderer, fieldName, typeName, required, definition2);
+                
+                return builder.createInputField(renderer, fieldName, typeName, required, type);
               } else {
                 invariant( false,
                   // tslint:disable-line
@@ -302,28 +301,23 @@ function visitWithContext(context: VisitingContext, path: string[] = []) {
       }
       const fullPath = path.concat(fieldName);
       const fullPathStr = fullPath.join('.');
-      const type = context.resolveType(fieldName) && context.resolveType(typeName) || context.resolveType(typeName);
+      const type = context.resolveType(typeName) &&  context.resolveType(typeName) || context.resolveType(fieldName);
       const rendererByType = context.resolveRenderer(typeName);
       const rendererByField = context.resolveFieldRenderer(fullPathStr);
-
+      const renderer = rendererByField.render !== undefined ? rendererByField : rendererByType;
       // if a render for this path exists, take the highest priority
       // const renderer = rendererByField.render !== undefined ? rendererByField : rendererByType;
       const customFieldRenderer = rendererByField.render !== undefined ? rendererByField : rendererByType;
-      
-
-
-      const types: TypeDefinitions = {};
-      type.fields.forEach((fieldType: InputValueDefinitionNode): void => {types[fieldType.name.value] = fieldType; });
-      const nestedContext = context.extend({}, {}, types);
-
-      const definition = nestedContext.resolveType(fieldName) && {...nestedContext.resolveType(fieldName), memberPath: fullPath}
+      const definition = context.resolveType(fieldName) && {...context.resolveType(fieldName), memberPath: fullPath}
         || {...type, memberPath: fullPath};
+        const types: TypeDefinitions = {};
+        type.fields.forEach((fieldType: InputValueDefinitionNode): void => {types[fieldType.name.value] = fieldType; });
+      const nestedContext = context.extend(renderer.renderers, renderer.customFields, types);
       let children = visit(type.fields, visitWithContext(nestedContext, fullPath));
           if (customFieldRenderer.render) {
             children =  builder.createFormSection(customFieldRenderer, fieldName, children, required, definition);
             // builder.createInputField(customFieldRenderer, fieldName, typeName, required, type);
         }
-        
         const arrayRenderer = context.resolveRenderer('Array');
         const arrayField = builder.createArrayField(arrayRenderer, fieldName, children, node.type.type, required, definition);
         return arrayField;
@@ -451,7 +445,8 @@ export function apolloForm(
           }).then( (response: MutationResponse) => {
             const { name } = parseOperationSignature(document, 'mutation');
             return response.data[name];
-          }).catch( (error: any) => { throw new SubmissionError(error); } );
+          }).catch( (error: any) => {
+            throw new SubmissionError(error); } );
         }
         throw new Error(`Expected mutation in apolloForm.`);
       },

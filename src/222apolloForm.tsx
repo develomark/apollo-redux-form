@@ -189,10 +189,9 @@ class VisitingContext {
     const render = this.customFields[fieldPath];
     return isRenderFunction(render) ? {render} as FormRenderer : render;
   }
-  extend(renderers: FormRenderers = {}, customFields: FormRenderers = {}, types: TypeDefinitions = {}) {
-
+  extend(renderers: FormRenderers = {}, customFields: FormRenderers = {}) {
     return new VisitingContext(
-      !Object.keys(types).length ? this.types  : {...this.types, ...types},
+      this.types,
       { ...this.renderers, ...renderers },
       { ...this.customFields, ...customFields },
     );
@@ -221,7 +220,7 @@ function visitWithContext(context: VisitingContext, path: string[] = []) {
       const fullPath = path.concat(fieldName);
       const fullPathStr = fullPath.join('.');
       
-      const type = context.resolveType(fieldName) && context.resolveType(typeName) || context.resolveType(typeName) ;
+      const type =  context.resolveType(typeName) && context.resolveType(typeName) || context.resolveType(fieldName) ;
       const rendererByType = context.resolveRenderer(typeName);
       const rendererByField = context.resolveFieldRenderer(fullPathStr);
 
@@ -229,36 +228,30 @@ function visitWithContext(context: VisitingContext, path: string[] = []) {
       const renderer = rendererByField.render !== undefined ? rendererByField : rendererByType;
 
       if ( isScalar(typeName) ) {
-        const definition = context.resolveType(fieldName) && {...context.resolveType(fieldName), memberPath: fullPath}
-        || {...type, memberPath: fullPath};
+        const definition = {...type, memberPath: fullPath};
         
         return builder.createInputField(renderer, fieldName, typeName, required, definition);
       } else {
         if (type) {
           switch ( type.kind ) {
             case 'InputObjectTypeDefinition':
-              const types: TypeDefinitions = {};
-              type.fields.forEach((fieldType: InputValueDefinitionNode): void => {types[fieldType.name.value] = fieldType; });
-              const nestedContext = context.extend(renderer.renderers, renderer.customFields, types);
+            
+              const nestedContext = context.extend(renderer.renderers, renderer.customFields);
               const children = visit(type.fields, visitWithContext(nestedContext, fullPath));
               const objectRenderer = renderer.render !== undefined ? renderer : context.resolveRenderer('Object');
-              const definition = nestedContext.resolveType(fieldName)
-                && {...nestedContext.resolveType(fieldName), memberPath: fullPath, object: true}
-                || {...type, memberPath: fullPath, object: true};
+              const definition =  {...type, memberPath: fullPath, object: true};
               return builder.createFormSection(objectRenderer, fieldName, children, required, definition);
             case 'EnumTypeDefinition':
               const options = type.values.map(
                 ({name: {value}}: EnumValueDefinitionNode) => ({key: value, value}),
               );
               const enumRenderer = renderer.render !== undefined ? renderer : context.resolveRenderer('Enum');
-              const definition1 = context.resolveType(fieldName) && {...context.resolveType(fieldName), memberPath: fullPath}
-                || {...type, memberPath: fullPath};
+              const definition1 = {...type, memberPath: fullPath};
               return builder.createSelectField(enumRenderer, fieldName, typeName, options, required, definition1);
             case 'ScalarTypeDefinition':
             case 'InputValueDefinition':
               if (renderer.render !== undefined) {
-                const definition2 = context.resolveType(fieldName) && {...context.resolveType(fieldName), memberPath: fullPath}
-                || {...type, memberPath: fullPath};
+                const definition2 = {...type, memberPath: fullPath};
                 return builder.createInputField(renderer, fieldName, typeName, required, definition2);
               } else {
                 invariant( false,
@@ -302,23 +295,16 @@ function visitWithContext(context: VisitingContext, path: string[] = []) {
       }
       const fullPath = path.concat(fieldName);
       const fullPathStr = fullPath.join('.');
-      const type = context.resolveType(fieldName) && context.resolveType(typeName) || context.resolveType(typeName);
+      const type =  context.resolveType(typeName);
       const rendererByType = context.resolveRenderer(typeName);
       const rendererByField = context.resolveFieldRenderer(fullPathStr);
 
       // if a render for this path exists, take the highest priority
       // const renderer = rendererByField.render !== undefined ? rendererByField : rendererByType;
       const customFieldRenderer = rendererByField.render !== undefined ? rendererByField : rendererByType;
-      
+      const definition = {...type, memberPath: fullPath};
 
-
-      const types: TypeDefinitions = {};
-      type.fields.forEach((fieldType: InputValueDefinitionNode): void => {types[fieldType.name.value] = fieldType; });
-      const nestedContext = context.extend({}, {}, types);
-
-      const definition = nestedContext.resolveType(fieldName) && {...nestedContext.resolveType(fieldName), memberPath: fullPath}
-        || {...type, memberPath: fullPath};
-      let children = visit(type.fields, visitWithContext(nestedContext, fullPath));
+      let children = visit(type.fields, visitWithContext(context, fullPath));
           if (customFieldRenderer.render) {
             children =  builder.createFormSection(customFieldRenderer, fieldName, children, required, definition);
             // builder.createInputField(customFieldRenderer, fieldName, typeName, required, type);
